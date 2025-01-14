@@ -1,10 +1,19 @@
-import React, { useState, useEffect } from 'react';
-import { parse } from 'papaparse';
-import { Plus, Building2, X, Download, Upload, Loader2 } from 'lucide-react';
-import { db } from '../lib/firebase';
-import { collection, getDocs, addDoc, updateDoc, doc, orderBy, query, writeBatch } from 'firebase/firestore';
-import { useNavigate } from 'react-router-dom';
-import type { Campaign } from '../types';
+import React, { useState, useEffect } from "react";
+import { parse } from "papaparse";
+import { Plus, Building2, X, Download, Upload, Loader2 } from "lucide-react";
+import { db } from "../lib/firebase";
+import {
+  collection,
+  getDocs,
+  addDoc,
+  updateDoc,
+  doc,
+  orderBy,
+  query,
+  writeBatch,
+} from "firebase/firestore";
+import { useNavigate } from "react-router-dom";
+import type { Campaign } from "../types";
 
 interface Contact {
   name: string;
@@ -28,15 +37,18 @@ function CampaignsPage() {
 
   async function fetchCampaigns() {
     try {
-      const campaignsQuery = query(collection(db, 'campaigns'), orderBy('created_at', 'desc'));
+      const campaignsQuery = query(
+        collection(db, "campaigns"),
+        orderBy("created_at", "desc"),
+      );
       const snapshot = await getDocs(campaignsQuery);
-      const campaignsData = snapshot.docs.map(doc => ({
+      const campaignsData = snapshot.docs.map((doc) => ({
         id: doc.id,
-        ...doc.data()
+        ...doc.data(),
       })) as Campaign[];
       setCampaigns(campaignsData);
     } catch (error) {
-      console.error('Error fetching campaigns:', error);
+      console.error("Error fetching campaigns:", error);
     } finally {
       setLoading(false);
     }
@@ -47,12 +59,12 @@ function CampaignsPage() {
   }
 
   function downloadTemplate() {
-    const csvContent = 'Name,Phone Number\nJohn Doe,+1234567890';
-    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const csvContent = "Name,Phone Number\nJohn Doe,+1234567890";
+    const blob = new Blob([csvContent], { type: "text/csv" });
     const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    a.download = 'contacts_template.csv';
+    a.download = "contacts_template.csv";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -70,7 +82,9 @@ function CampaignsPage() {
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <h1 className="text-xl font-semibold text-gray-900">Campaign Management</h1>
+        <h1 className="text-xl font-semibold text-gray-900">
+          Campaign Management
+        </h1>
         <div className="flex gap-2">
           <button
             onClick={downloadTemplate}
@@ -108,8 +122,12 @@ function CampaignsPage() {
           >
             <div className="flex justify-between items-start">
               <div>
-                <h3 className="text-sm font-medium text-gray-900">{campaign.name}</h3>
-                <p className="text-xs text-gray-500 mt-1">{campaign.timezone}</p>
+                <h3 className="text-sm font-medium text-gray-900">
+                  {campaign.name}
+                </h3>
+                <p className="text-xs text-gray-500 mt-1">
+                  {campaign.timezone}
+                </p>
                 <p className="text-xs text-gray-500">
                   Created: {new Date(campaign.created_at).toLocaleDateString()}
                 </p>
@@ -117,11 +135,15 @@ function CampaignsPage() {
                   Time: {campaign.start_time} - {campaign.end_time}
                 </p>
               </div>
-              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                campaign.status === 'active' ? 'bg-green-100 text-green-800' :
-                campaign.status === 'ended' ? 'bg-red-100 text-red-800' :
-                'bg-gray-100 text-gray-800'
-              }`}>
+              <span
+                className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                  campaign.status === "active"
+                    ? "bg-green-100 text-green-800"
+                    : campaign.status === "ended"
+                      ? "bg-red-100 text-red-800"
+                      : "bg-gray-100 text-gray-800"
+                }`}
+              >
                 {campaign.status}
               </span>
             </div>
@@ -129,25 +151,36 @@ function CampaignsPage() {
             <div className="mt-3">
               <div className="flex justify-between text-xs text-gray-500 mb-1">
                 <span>Progress</span>
-                <span>{Math.round((campaign.contacts_called / campaign.total_contacts) * 100)}%</span>
+                <span>
+                  {Math.round(
+                    (campaign.contacts_called / campaign.total_contacts) * 100,
+                  )}
+                  %
+                </span>
               </div>
               <div className="w-full bg-gray-100 rounded-full h-1.5">
                 <div
                   className="bg-indigo-600 h-1.5 rounded-full transition-all duration-300"
-                  style={{ width: `${(campaign.contacts_called / campaign.total_contacts) * 100}%` }}
+                  style={{
+                    width: `${(campaign.contacts_called / campaign.total_contacts) * 100}%`,
+                  }}
                 />
               </div>
             </div>
 
             <dl className="mt-3 grid grid-cols-2 gap-4 text-center">
               <div className="border-r border-gray-100">
-                <dt className="text-xs font-medium text-gray-500">Total Contacts</dt>
+                <dt className="text-xs font-medium text-gray-500">
+                  Total Contacts
+                </dt>
                 <dd className="mt-1 text-sm font-semibold text-gray-900">
                   {campaign.total_contacts}
                 </dd>
               </div>
               <div>
-                <dt className="text-xs font-medium text-gray-500">Calls Made</dt>
+                <dt className="text-xs font-medium text-gray-500">
+                  Calls Made
+                </dt>
                 <dd className="mt-1 text-sm font-semibold text-gray-900">
                   {campaign.contacts_called}
                 </dd>
@@ -161,52 +194,103 @@ function CampaignsPage() {
 }
 
 function NewCampaignForm({ onClose, onSuccess }: NewCampaignFormProps) {
-  const [name, setName] = useState('');
-  const [timezone, setTimezone] = useState('Asia/Dubai');
-  const [startTime, setStartTime] = useState('09:00');
-  const [endTime, setEndTime] = useState('18:00');
+  const [name, setName] = useState("");
+  const [timezone, setTimezone] = useState("Asia/Dubai");
+  const [startTime, setStartTime] = useState("09:00");
+  const [endTime, setEndTime] = useState("18:00");
+  const [campaignDate, setCampaignDate] = useState("");
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
+
+  // Get tomorrow's date as the minimum allowed date
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate());
+  const minDate = tomorrow.toISOString().split("T")[0];
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!name || !timezone || !startTime || !endTime || contacts.length === 0) {
-      setError('Please fill in all fields and upload contacts');
+    if (
+      !name ||
+      !timezone ||
+      !startTime ||
+      !endTime ||
+      !campaignDate ||
+      contacts.length === 0
+    ) {
+      setError("Please fill in all fields and upload contacts");
       return;
     }
 
     try {
       setUploading(true);
-      
+
       // Create campaign
-      const campaignRef = await addDoc(collection(db, 'campaigns'), {
+      const campaignRef = await addDoc(collection(db, "campaigns"), {
         name,
         timezone,
         start_time: startTime,
         end_time: endTime,
+        campaign_date: campaignDate,
         total_contacts: contacts.length,
         contacts_called: 0,
-        status: 'active',
-        created_at: new Date().toISOString()
+        status: "active",
+        created_at: new Date().toISOString(),
       });
 
       // Add contacts in batches
       const batch = writeBatch(db);
       contacts.forEach((contact) => {
-        const contactRef = doc(collection(db, `campaigns/${campaignRef.id}/contacts`));
+        const contactRef = doc(
+          collection(db, `campaigns/${campaignRef.id}/contacts`),
+        );
         batch.set(contactRef, {
           ...contact,
           called: false,
-          created_at: new Date().toISOString()
+          created_at: new Date().toISOString(),
         });
       });
       await batch.commit();
 
+      // Schedule campaign with the API
+      const scheduleResponse = await fetch(
+        "https://bulk-back-vapi-chiragguptaatwo.replit.app/campaign/schedule",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            campaign_id: campaignRef.id,
+            date: campaignDate,
+            start_time: startTime,
+            end_time: endTime,
+            timezone: timezone,
+          }),
+        },
+      );
+
+      if (!scheduleResponse.ok) {
+        throw new Error("Failed to schedule campaign");
+      }
+
       onSuccess();
     } catch (error) {
-      console.error('Error creating campaign:', error);
-      setError('Failed to create campaign');
+      console.error("Error creating campaign:", error);
+      setError("Failed to create campaign");
+
+      // If campaign was created but scheduling failed, update status to error
+      if (
+        error instanceof Error &&
+        error.message === "Failed to schedule campaign"
+      ) {
+        try {
+          const campaignRef = doc(db, "campaigns", campaignRef.id);
+          await updateDoc(campaignRef, { status: "error" });
+        } catch (updateError) {
+          console.error("Error updating campaign status:", updateError);
+        }
+      }
     } finally {
       setUploading(false);
     }
@@ -220,17 +304,17 @@ function NewCampaignForm({ onClose, onSuccess }: NewCampaignFormProps) {
       header: true,
       complete: (results) => {
         const validContacts = results.data
-          .filter((row: any) => row['Name'] && row['Phone Number'])
+          .filter((row: any) => row["Name"] && row["Phone Number"])
           .map((row: any) => ({
-            name: row['Name'],
-            phone_number: row['Phone Number']
+            name: row["Name"],
+            phone_number: row["Phone Number"],
           }));
         setContacts(validContacts);
       },
       error: (error) => {
-        console.error('Error parsing CSV:', error);
-        setError('Failed to parse CSV file');
-      }
+        console.error("Error parsing CSV:", error);
+        setError("Failed to parse CSV file");
+      },
     });
   }
 
@@ -249,7 +333,10 @@ function NewCampaignForm({ onClose, onSuccess }: NewCampaignFormProps) {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label htmlFor="name" className="block text-sm font-medium text-gray-700">
+            <label
+              htmlFor="name"
+              className="block text-sm font-medium text-gray-700"
+            >
               Campaign Name
             </label>
             <input
@@ -262,7 +349,10 @@ function NewCampaignForm({ onClose, onSuccess }: NewCampaignFormProps) {
           </div>
 
           <div>
-            <label htmlFor="timezone" className="block text-sm font-medium text-gray-700">
+            <label
+              htmlFor="timezone"
+              className="block text-sm font-medium text-gray-700"
+            >
               Timezone
             </label>
             <select
@@ -277,9 +367,29 @@ function NewCampaignForm({ onClose, onSuccess }: NewCampaignFormProps) {
             </select>
           </div>
 
+          <div>
+            <label
+              htmlFor="campaignDate"
+              className="block text-sm font-medium text-gray-700"
+            >
+              Campaign Date
+            </label>
+            <input
+              type="date"
+              id="campaignDate"
+              value={campaignDate}
+              min={minDate}
+              onChange={(e) => setCampaignDate(e.target.value)}
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+            />
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label htmlFor="startTime" className="block text-sm font-medium text-gray-700">
+              <label
+                htmlFor="startTime"
+                className="block text-sm font-medium text-gray-700"
+              >
                 Start Time
               </label>
               <input
@@ -291,7 +401,10 @@ function NewCampaignForm({ onClose, onSuccess }: NewCampaignFormProps) {
               />
             </div>
             <div>
-              <label htmlFor="endTime" className="block text-sm font-medium text-gray-700">
+              <label
+                htmlFor="endTime"
+                className="block text-sm font-medium text-gray-700"
+              >
                 End Time
               </label>
               <input
@@ -338,11 +451,7 @@ function NewCampaignForm({ onClose, onSuccess }: NewCampaignFormProps) {
             )}
           </div>
 
-          {error && (
-            <p className="text-sm text-red-600">
-              {error}
-            </p>
-          )}
+          {error && <p className="text-sm text-red-600">{error}</p>}
 
           <div className="flex justify-end gap-3">
             <button
@@ -363,7 +472,7 @@ function NewCampaignForm({ onClose, onSuccess }: NewCampaignFormProps) {
                   Creating...
                 </>
               ) : (
-                'Create Campaign'
+                "Create Campaign"
               )}
             </button>
           </div>
