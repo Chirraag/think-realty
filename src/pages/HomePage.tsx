@@ -70,7 +70,6 @@ function HomePage() {
         const callsQuery = query(
           collection(db, "calls"),
           orderBy("timestamp", "desc"),
-          limit(10),
         );
         const callsSnapshot = await getDocs(callsQuery);
         const callsData = callsSnapshot.docs.map((doc) => ({
