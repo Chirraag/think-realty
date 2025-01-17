@@ -59,7 +59,8 @@ function CampaignsPage() {
   }
 
   function downloadTemplate() {
-    const csvContent = "Name,Phone Number\nJohn Doe,+1234567890";
+    const csvContent =
+      "Name,Phone Number,Project Name,Unit Number\nJohn Doe,+1234567890,Palm Jumeirah,123";
     const blob = new Blob([csvContent], { type: "text/csv" });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -132,6 +133,10 @@ function CampaignsPage() {
                   Created: {new Date(campaign.created_at).toLocaleDateString()}
                 </p>
                 <p className="text-xs text-gray-500">
+                  {new Date(campaign?.campaign_start_date).toLocaleDateString()}{" "}
+                  - {new Date(campaign?.campaign_end_date).toLocaleDateString()}
+                </p>
+                <p className="text-xs text-gray-500">
                   Time: {campaign.start_time} - {campaign.end_time}
                 </p>
               </div>
@@ -202,6 +207,43 @@ function NewCampaignForm({ onClose, onSuccess }: NewCampaignFormProps) {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
+  const [campaignStartDate, setCampaignStartDate] = useState("");
+  const [campaignEndDate, setCampaignEndDate] = useState("");
+
+  const [assistants, setAssistants] = useState<Assistant[]>([]);
+  const [selectedAssistantId, setSelectedAssistantId] = useState("");
+  const [loadingAssistants, setLoadingAssistants] = useState(true);
+
+  useEffect(() => {
+    async function fetchAssistants() {
+      try {
+        const response = await fetch("https://api.vapi.ai/assistant", {
+          headers: {
+            Authorization: "Bearer a74661c9-f98f-4af0-afa4-00a0e80ce133",
+          },
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          setAssistants(
+            data.map((assistant: any) => ({
+              id: assistant.id,
+              name: assistant.name,
+            })),
+          );
+        } else {
+          setError("Failed to load assistants");
+        }
+      } catch (error) {
+        console.error("Error fetching assistants:", error);
+        setError("Failed to load assistants");
+      } finally {
+        setLoadingAssistants(false);
+      }
+    }
+
+    fetchAssistants();
+  }, []);
 
   // Get tomorrow's date as the minimum allowed date
   const tomorrow = new Date();
@@ -215,7 +257,9 @@ function NewCampaignForm({ onClose, onSuccess }: NewCampaignFormProps) {
       !timezone ||
       !startTime ||
       !endTime ||
-      !campaignDate ||
+      !campaignStartDate ||
+      !campaignEndDate ||
+      !selectedAssistantId ||
       contacts.length === 0
     ) {
       setError("Please fill in all fields and upload contacts");
@@ -231,11 +275,13 @@ function NewCampaignForm({ onClose, onSuccess }: NewCampaignFormProps) {
         timezone,
         start_time: startTime,
         end_time: endTime,
-        campaign_date: campaignDate,
+        campaign_start_date: campaignStartDate,
+        campaign_end_date: campaignEndDate,
         total_contacts: contacts.length,
         contacts_called: 0,
         status: "active",
         created_at: new Date().toISOString(),
+        assistantId: selectedAssistantId,
       });
 
       // Add contacts in batches
@@ -262,7 +308,8 @@ function NewCampaignForm({ onClose, onSuccess }: NewCampaignFormProps) {
           },
           body: JSON.stringify({
             campaign_id: campaignRef.id,
-            date: campaignDate,
+            start_date: campaignStartDate,
+            end_date: campaignEndDate,
             start_time: startTime,
             end_time: endTime,
             timezone: timezone,
@@ -284,8 +331,9 @@ function NewCampaignForm({ onClose, onSuccess }: NewCampaignFormProps) {
         error instanceof Error &&
         error.message === "Failed to schedule campaign"
       ) {
+        let campaignRef;
         try {
-          const campaignRef = doc(db, "campaigns", campaignRef.id);
+          campaignRef = doc(db, "campaigns", campaignRef.id);
           await updateDoc(campaignRef, { status: "error" });
         } catch (updateError) {
           console.error("Error updating campaign status:", updateError);
@@ -308,6 +356,8 @@ function NewCampaignForm({ onClose, onSuccess }: NewCampaignFormProps) {
           .map((row: any) => ({
             name: row["Name"],
             phone_number: row["Phone Number"],
+            project_name: row["Project Name"] || "",
+            unit_number: row["Unit Number"] || "",
           }));
         setContacts(validContacts);
       },
@@ -367,21 +417,39 @@ function NewCampaignForm({ onClose, onSuccess }: NewCampaignFormProps) {
             </select>
           </div>
 
-          <div>
-            <label
-              htmlFor="campaignDate"
-              className="block text-sm font-medium text-gray-700"
-            >
-              Campaign Date
-            </label>
-            <input
-              type="date"
-              id="campaignDate"
-              value={campaignDate}
-              min={minDate}
-              onChange={(e) => setCampaignDate(e.target.value)}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label
+                htmlFor="campaignStartDate"
+                className="block text-sm font-medium text-gray-700"
+              >
+                Start Date
+              </label>
+              <input
+                type="date"
+                id="campaignStartDate"
+                value={campaignStartDate}
+                min={minDate}
+                onChange={(e) => setCampaignStartDate(e.target.value)}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+              />
+            </div>
+            <div>
+              <label
+                htmlFor="campaignEndDate"
+                className="block text-sm font-medium text-gray-700"
+              >
+                End Date
+              </label>
+              <input
+                type="date"
+                id="campaignEndDate"
+                value={campaignEndDate}
+                min={campaignStartDate || minDate}
+                onChange={(e) => setCampaignEndDate(e.target.value)}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+              />
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -415,6 +483,33 @@ function NewCampaignForm({ onClose, onSuccess }: NewCampaignFormProps) {
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
               />
             </div>
+          </div>
+          <div>
+            <label
+              htmlFor="assistant"
+              className="block text-sm font-medium text-gray-700"
+            >
+              Assistant
+            </label>
+            <select
+              id="assistant"
+              value={selectedAssistantId}
+              onChange={(e) => setSelectedAssistantId(e.target.value)}
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+              disabled={loadingAssistants}
+            >
+              <option value="">Select an assistant</option>
+              {assistants.map((assistant) => (
+                <option key={assistant.id} value={assistant.id}>
+                  {assistant.name}
+                </option>
+              ))}
+            </select>
+            {loadingAssistants && (
+              <p className="mt-1 text-sm text-gray-500">
+                Loading assistants...
+              </p>
+            )}
           </div>
 
           <div>

@@ -8,6 +8,9 @@ import {
   XCircle,
   ArrowLeft,
   ThumbsUp,
+  Clock,
+  PhoneOff,
+  PhoneCall,
 } from "lucide-react";
 import { db } from "../lib/firebase";
 import {
@@ -16,6 +19,7 @@ import {
   getDoc,
   getDocs,
   updateDoc,
+  setDoc,
 } from "firebase/firestore";
 import type { Campaign } from "../types";
 
@@ -45,8 +49,9 @@ interface CallData {
     role: string;
   }>;
   analysis?: {
-    successEvaluation: boolean;
+    successEvaluation: string;
   };
+  transcript: string;
 }
 
 function CampaignDetailPage() {
@@ -64,6 +69,9 @@ function CampaignDetailPage() {
     called: 0,
     error: 0,
     interested: 0,
+    answered: 0,
+    notAnswered: 0,
+    totalTalkMinutes: 0,
   });
 
   useEffect(() => {
@@ -94,15 +102,75 @@ function CampaignDetailPage() {
 
         if (callIds.length > 0) {
           const callsData: { [key: string]: CallData } = {};
+          let totalDuration = 0;
+          let answered = 0;
+          let notAnswered = 0;
+
           for (const callId of callIds) {
             const callDoc = await getDoc(doc(db, "calls", callId));
             if (callDoc.exists()) {
-              callsData[callId] = callDoc.data() as CallData;
+              const callData = callDoc.data() as CallData;
+              callsData[callId] = callData;
+              totalDuration += callData.durationSeconds || 0;
+
+              // Count answered vs not answered calls
+              if (callData.endedReason === "customer-did-not-answer") {
+                notAnswered++;
+              } else {
+                answered++;
+              }
+            } else {
+              try {
+                // Make API call to VAPI
+                const response = await fetch(
+                  `https://api.vapi.ai/call/${callId}`,
+                  {
+                    headers: {
+                      Authorization:
+                        "Bearer a74661c9-f98f-4af0-afa4-00a0e80ce133",
+                    },
+                  },
+                );
+
+                if (response.ok) {
+                  const callData = await response.json();
+
+                  // If call has ended, store it in Firestore
+                  if (callData.status === "ended") {
+                    await setDoc(doc(db, "calls", callId), callData);
+                    callsData[callId] = callData;
+
+                    // Update counters
+                    totalDuration += callData.durationSeconds || 0;
+                    if (callData.endedReason === "customer-did-not-answer") {
+                      notAnswered++;
+                    } else {
+                      answered++;
+                    }
+                  } else {
+                    // If call hasn't ended, count as not answered
+                    notAnswered++;
+                  }
+                } else {
+                  // If API call fails, count as not answered
+                  notAnswered++;
+                }
+              } catch (error) {
+                console.error(
+                  `Error fetching call data from VAPI for ${callId}:`,
+                  error,
+                );
+                // If there's an error, count as not answered
+                notAnswered++;
+              }
             }
           }
+
           setCalls(callsData);
 
-          // Calculate stats including interested contacts
+          console.log(contactsData);
+
+          // Calculate stats
           const notCalled = contactsData.filter((c) => !c.called).length;
           const called = contactsData.filter(
             (c) => c.called && !c.error,
@@ -113,7 +181,15 @@ function CampaignDetailPage() {
             return callData?.analysis?.successEvaluation === "true";
           }).length;
 
-          setStats({ notCalled, called, error, interested });
+          setStats({
+            notCalled,
+            called,
+            error,
+            interested,
+            answered,
+            notAnswered,
+            totalTalkMinutes: Math.round(totalDuration / 60),
+          });
         }
 
         setContacts(contactsData);
@@ -139,7 +215,9 @@ function CampaignDetailPage() {
     }
   }
 
-  function downloadContacts(status: "notCalled" | "error" | "interested") {
+  function downloadContacts(
+    status: "notCalled" | "error" | "interested" | "notAnswered",
+  ) {
     const filteredContacts = contacts.filter((contact) => {
       if (status === "notCalled") return !contact.called;
       if (status === "error") return !!contact.error;
@@ -147,14 +225,29 @@ function CampaignDetailPage() {
         const callData = contact.call_id ? calls[contact.call_id] : null;
         return callData?.analysis?.successEvaluation === "true";
       }
+      if (status === "notAnswered") {
+        // Include contacts where call_id exists but no call data found
+        if (contact.call_id && !calls[contact.call_id]) return true;
+        const callData = contact.call_id ? calls[contact.call_id] : null;
+        return callData?.endedReason === "customer-did-not-answer";
+      }
       return false;
     });
 
     const csvContent = [
-      ["Name", "Phone Number", "Status", "Error"],
+      [
+        "Name",
+        "Phone Number",
+        "Project Name",
+        "Unit Number",
+        "Status",
+        "Error",
+      ],
       ...filteredContacts.map((contact) => [
         contact.name || "",
         contact.phone_number,
+        contact.project_name || "",
+        contact.unit_number || "",
         status,
         contact.error || "",
       ]),
@@ -178,7 +271,16 @@ function CampaignDetailPage() {
   }
 
   function formatDuration(seconds: number) {
-    return `${seconds.toFixed(1)}s`;
+    return `${seconds?.toFixed(1)}s`;
+  }
+
+  function formatMinutes(minutes: number) {
+    if (minutes < 60) {
+      return `${minutes} min`;
+    }
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    return `${hours}h ${remainingMinutes}m`;
   }
 
   function formatTranscript(
@@ -224,6 +326,18 @@ function CampaignDetailPage() {
               {new Date(campaign.created_at).toLocaleDateString()} ·{" "}
               {campaign.timezone}
             </p>
+            <p className="text-sm text-gray-500">
+              Campaign Period:{" "}
+              {new Date(campaign.campaign_start_date).toLocaleDateString()} -{" "}
+              {new Date(campaign.campaign_end_date).toLocaleDateString()}
+            </p>
+            <p className="text-sm text-gray-500">
+              Daily Time: {campaign?.start_time} - {campaign?.end_time}
+            </p>
+            <p className="text-sm text-gray-500">
+              {new Date(campaign.created_at).toLocaleDateString()} ·{" "}
+              {campaign.timezone}
+            </p>
           </div>
         </div>
         {(campaign.status === "active" ||
@@ -237,7 +351,7 @@ function CampaignDetailPage() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-6">
         <div className="bg-white overflow-hidden shadow-sm rounded-lg border border-gray-100">
           <div className="p-4">
             <div className="flex items-center justify-between">
@@ -320,6 +434,57 @@ function CampaignDetailPage() {
             )}
           </div>
         </div>
+
+        <div className="bg-white overflow-hidden shadow-sm rounded-lg border border-gray-100">
+          <div className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-500">
+                  Total Talk Time
+                </p>
+                <p className="text-2xl font-semibold text-gray-900">
+                  {formatMinutes(stats.totalTalkMinutes)}
+                </p>
+              </div>
+              <Clock className="h-8 w-8 text-purple-500" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white overflow-hidden shadow-sm rounded-lg border border-gray-100">
+          <div className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-500">Answer Rate</p>
+                <p className="text-2xl font-semibold text-gray-900">
+                  {stats.called > 0
+                    ? Math.round((stats.answered / stats.called) * 100)
+                    : 0}
+                  %
+                </p>
+              </div>
+              <div className="flex flex-col items-end">
+                <div className="flex items-center text-green-500 text-sm mb-1">
+                  <PhoneCall className="h-4 w-4 mr-1" />
+                  {stats.answered}
+                </div>
+                <div className="flex items-center text-red-500 text-sm">
+                  <PhoneOff className="h-4 w-4 mr-1" />
+                  {stats.notAnswered}
+                </div>
+              </div>
+            </div>
+            {stats.notAnswered > 0 && (
+              <button
+                onClick={() => downloadContacts("notAnswered")}
+                className="mt-4 inline-flex items-center text-sm text-indigo-600 hover:text-indigo-900"
+              >
+                <Download className="h-4 w-4 mr-1" />
+                Download Not Answered
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
       <div className="bg-white shadow-sm rounded-lg border border-gray-100">
@@ -353,6 +518,18 @@ function CampaignDetailPage() {
                   className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
                 >
                   Customer Number
+                </th>
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                >
+                  Project Name
+                </th>
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                >
+                  Unit Number
                 </th>
                 <th
                   scope="col"
@@ -397,6 +574,7 @@ function CampaignDetailPage() {
                 const callData = contact.call_id
                   ? calls[contact.call_id]
                   : null;
+                const isNotAnswered = contact.call_id && !callData;
                 return (
                   <tr key={contact.id}>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
@@ -410,6 +588,12 @@ function CampaignDetailPage() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {callData?.customer?.number || contact.phone_number}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {contact.project_name || "-"}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {contact.unit_number || "-"}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span
@@ -441,7 +625,9 @@ function CampaignDetailPage() {
                         : "-"}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {callData?.endedReason || "-"}
+                      {isNotAnswered
+                        ? "customer-did-not-answer"
+                        : callData?.endedReason || "-"}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {callData?.analysis?.successEvaluation === "true" ? (

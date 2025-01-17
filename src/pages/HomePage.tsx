@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { BarChart, Phone, Clock, CheckCircle } from "lucide-react";
+import { BarChart, Phone, Clock, CheckCircle, XCircle } from "lucide-react";
 import { db } from "../lib/firebase";
 import {
   collection,
@@ -23,6 +23,7 @@ interface CallData {
   customer: {
     number: string;
   };
+  transcript: string;
   messages: Array<{
     message: string;
     role: string;
@@ -39,6 +40,7 @@ function HomePage() {
     activeCampaigns: 0,
     completedCampaigns: 0,
     averageDuration: 0,
+    totalTalkMinutes: 0,
   });
   const [endedReasonStats, setEndedReasonStats] = useState<EndedReasonStats>(
     {},
@@ -84,6 +86,7 @@ function HomePage() {
           0,
         );
         const averageDuration = totalCalls > 0 ? totalDuration / totalCalls : 0;
+        const totalTalkMinutes = Math.round(totalDuration / 60);
 
         // Calculate ended reason stats
         const reasonStats: EndedReasonStats = {};
@@ -99,6 +102,7 @@ function HomePage() {
           activeCampaigns,
           completedCampaigns,
           averageDuration,
+          totalTalkMinutes,
         });
         setEndedReasonStats(reasonStats);
         setCalls(callsData);
@@ -120,13 +124,13 @@ function HomePage() {
     return `${seconds.toFixed(1)}s`;
   }
 
-  function formatTranscript(
-    messages: Array<{ message: string; role: string }>,
-  ) {
-    return messages
-      .filter((msg) => msg.role === "bot" || msg.role === "human")
-      .map((msg) => `${msg.role === "bot" ? "AI" : "Customer"}: ${msg.message}`)
-      .join("\n");
+  function formatMinutes(minutes: number) {
+    if (minutes < 60) {
+      return `${minutes} min`;
+    }
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    return `${hours}h ${remainingMinutes}m`;
   }
 
   return (
@@ -135,7 +139,7 @@ function HomePage() {
         Dashboard Overview
       </h1>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <MetricCard
           title="Total Calls"
           value={metrics.totalCalls}
@@ -155,6 +159,11 @@ function HomePage() {
           title="Avg. Call Duration"
           value={formatDuration(metrics.averageDuration)}
           icon={<Clock className="h-5 w-5 text-yellow-600" />}
+        />
+        <MetricCard
+          title="Total Talk Time"
+          value={formatMinutes(metrics.totalTalkMinutes)}
+          icon={<Clock className="h-5 w-5 text-purple-600" />}
         />
       </div>
 
@@ -286,11 +295,11 @@ function HomePage() {
                                   onClick={() => setExpandedTranscript(null)}
                                   className="text-gray-400 hover:text-gray-500"
                                 >
-                                  ✕
+                                  <XCircle className="h-4 w-4" />
                                 </button>
                               </div>
                               <pre className="text-xs whitespace-pre-wrap max-h-60 overflow-y-auto">
-                                {callData.transcript}
+                                {call.transcript}
                               </pre>
                             </div>
                           )}
