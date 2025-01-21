@@ -50,8 +50,15 @@ interface CallData {
   }>;
   analysis?: {
     successEvaluation: string;
+    structuredData?: {
+      "post-call-intent-analysis": string; // 'SALE' | 'RENT' | null
+    };
   };
   transcript: string;
+  appointment?: {
+    date: string;
+    time: string;
+  };
 }
 
 function CampaignDetailPage() {
@@ -95,6 +102,8 @@ function CampaignDetailPage() {
           ...doc.data(),
         })) as Contact[];
 
+        console.log("Contacts data:", contactsData);
+
         // Fetch call data for contacts with call_id
         const callIds = contactsData
           .filter((contact) => contact.call_id)
@@ -110,6 +119,16 @@ function CampaignDetailPage() {
             const callDoc = await getDoc(doc(db, "calls", callId));
             if (callDoc.exists()) {
               const callData = callDoc.data() as CallData;
+              const appointmentDoc = await getDoc(
+                doc(db, "appointments", callId),
+              );
+              if (appointmentDoc.exists()) {
+                const appointmentData = appointmentDoc.data();
+                callData.appointment = {
+                  date: appointmentData.date,
+                  time: appointmentData.time,
+                };
+              }
               callsData[callId] = callData;
               totalDuration += callData.durationSeconds || 0;
 
@@ -189,6 +208,18 @@ function CampaignDetailPage() {
             answered,
             notAnswered,
             totalTalkMinutes: Math.round(totalDuration / 60),
+          });
+        } else {
+          const notCalled = contactsData.filter((c) => !c.called).length;
+          const error = contactsData.filter((c) => c.error).length;
+          setStats({
+            notCalled,
+            called: 0,
+            error,
+            interested: 0,
+            answered: 0,
+            notAnswered: 0,
+            totalTalkMinutes: 0,
           });
         }
 
@@ -559,6 +590,18 @@ function CampaignDetailPage() {
                   scope="col"
                   className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
                 >
+                  Rent/Sale Intent
+                </th>
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                >
+                  Appointment
+                </th>
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                >
                   Recording
                 </th>
                 <th
@@ -637,6 +680,16 @@ function CampaignDetailPage() {
                       ) : (
                         "-"
                       )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {callData?.analysis?.structuredData?.[
+                        "post-call-intent-analysis"
+                      ] || "-"}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {callData?.appointment
+                        ? `${callData.appointment.date} & ${callData.appointment.time}`
+                        : "N/A"}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {callData?.recordingUrl ? (

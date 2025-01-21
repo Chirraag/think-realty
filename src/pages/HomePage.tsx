@@ -4,8 +4,10 @@ import { db } from "../lib/firebase";
 import {
   collection,
   getDocs,
+  getDoc,
   query,
   orderBy,
+  doc,
   limit,
   where,
 } from "firebase/firestore";
@@ -28,6 +30,16 @@ interface CallData {
     message: string;
     role: string;
   }>;
+  analysis?: {
+    successEvaluation: string;
+    structuredData?: {
+      "post-call-intent-analysis": string; // 'SALE' | 'RENT' | null
+    };
+  };
+  appointment?: {
+    date: string;
+    time: string;
+  };
 }
 
 interface EndedReasonStats {
@@ -74,10 +86,33 @@ function HomePage() {
           orderBy("timestamp", "desc"),
         );
         const callsSnapshot = await getDocs(callsQuery);
-        const callsData = callsSnapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        })) as CallData[];
+        // const callsData = callsSnapshot.docs.map((doc) => ({
+        //   id: doc.id,
+        //   ...doc.data(),
+        // })) as CallData[];
+
+        const callsData = await Promise.all(
+          callsSnapshot.docs.map(async (call) => {
+            const callData = call.data() as CallData;
+
+            // Fetch appointment data
+            const appointmentDoc = await getDoc(
+              doc(db, "appointments", call.id),
+            );
+            if (appointmentDoc.exists()) {
+              const appointmentData = appointmentDoc.data();
+              callData.appointment = {
+                date: appointmentData.date,
+                time: appointmentData.time,
+              };
+            }
+
+            return {
+              id: call.id,
+              ...callData,
+            };
+          }),
+        );
 
         // Calculate metrics
         const totalCalls = callsData.length;
@@ -225,6 +260,18 @@ function HomePage() {
                   scope="col"
                   className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
                 >
+                  Rent/Sale Intent
+                </th>
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                >
+                  Appointment
+                </th>
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                >
                   Transcript
                 </th>
                 <th
@@ -271,6 +318,16 @@ function HomePage() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {call.endedReason}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {call?.analysis?.structuredData?.[
+                        "post-call-intent-analysis"
+                      ] || "-"}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {call?.appointment
+                        ? `${call.appointment.date} & ${call.appointment.time}`
+                        : "N/A"}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-900">
                       {call.messages && (
