@@ -1,3 +1,4 @@
+import TranscriptDialog from "../components/TranscriptDialog";
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
@@ -71,6 +72,16 @@ function CampaignDetailPage() {
   const [expandedTranscript, setExpandedTranscript] = useState<string | null>(
     null,
   );
+  const [selectedTranscript, setSelectedTranscript] = useState<string | null>(
+    null,
+  );
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+
+  function openTranscript(transcript: string) {
+    setSelectedTranscript(transcript);
+    setIsDialogOpen(true);
+  }
+
   const [stats, setStats] = useState({
     notCalled: 0,
     called: 0,
@@ -80,6 +91,159 @@ function CampaignDetailPage() {
     notAnswered: 0,
     totalTalkMinutes: 0,
   });
+
+  // useEffect(() => {
+  //   async function fetchCampaignData() {
+  //     if (!id) return;
+
+  //     try {
+  //       // Fetch campaign details
+  //       const campaignDoc = await getDoc(doc(db, "campaigns", id));
+  //       if (!campaignDoc.exists()) {
+  //         throw new Error("Campaign not found");
+  //       }
+  //       setCampaign({ id: campaignDoc.id, ...campaignDoc.data() } as Campaign);
+
+  //       // Fetch contacts
+  //       const contactsSnapshot = await getDocs(
+  //         collection(db, `campaigns/${id}/contacts`),
+  //       );
+  //       const contactsData = contactsSnapshot.docs.map((doc) => ({
+  //         id: doc.id,
+  //         ...doc.data(),
+  //       })) as Contact[];
+
+  //       console.log("Contacts data:", contactsData);
+
+  //       // Fetch call data for contacts with call_id
+  //       const callIds = contactsData
+  //         .filter((contact) => contact.call_id)
+  //         .map((contact) => contact.call_id as string);
+
+  //       if (callIds.length > 0) {
+  //         const callsData: { [key: string]: CallData } = {};
+  //         let totalDuration = 0;
+  //         let answered = 0;
+  //         let notAnswered = 0;
+
+  //         for (const callId of callIds) {
+  //           const callDoc = await getDoc(doc(db, "calls", callId));
+  //           if (callDoc.exists()) {
+  //             const callData = callDoc.data() as CallData;
+  //             const appointmentDoc = await getDoc(
+  //               doc(db, "appointments", callId),
+  //             );
+  //             if (appointmentDoc.exists()) {
+  //               const appointmentData = appointmentDoc.data();
+  //               callData.appointment = {
+  //                 date: appointmentData.date,
+  //                 time: appointmentData.time,
+  //               };
+  //             }
+  //             callsData[callId] = callData;
+  //             totalDuration += callData.durationSeconds || 0;
+
+  //             // Count answered vs not answered calls
+  //             if (callData.endedReason === "customer-did-not-answer") {
+  //               notAnswered++;
+  //             } else {
+  //               answered++;
+  //             }
+  //           } else {
+  //             try {
+  //               // Make API call to VAPI
+  //               const response = await fetch(
+  //                 `https://api.vapi.ai/call/${callId}`,
+  //                 {
+  //                   headers: {
+  //                     Authorization:
+  //                       "Bearer a74661c9-f98f-4af0-afa4-00a0e80ce133",
+  //                   },
+  //                 },
+  //               );
+
+  //               if (response.ok) {
+  //                 const callData = await response.json();
+
+  //                 // If call has ended, store it in Firestore
+  //                 if (callData.status === "ended") {
+  //                   await setDoc(doc(db, "calls", callId), callData);
+  //                   callsData[callId] = callData;
+
+  //                   // Update counters
+  //                   totalDuration += callData.durationSeconds || 0;
+  //                   if (callData.endedReason === "customer-did-not-answer") {
+  //                     notAnswered++;
+  //                   } else {
+  //                     answered++;
+  //                   }
+  //                 } else {
+  //                   // If call hasn't ended, count as not answered
+  //                   notAnswered++;
+  //                 }
+  //               } else {
+  //                 // If API call fails, count as not answered
+  //                 notAnswered++;
+  //               }
+  //             } catch (error) {
+  //               console.error(
+  //                 `Error fetching call data from VAPI for ${callId}:`,
+  //                 error,
+  //               );
+  //               // If there's an error, count as not answered
+  //               notAnswered++;
+  //             }
+  //           }
+  //         }
+
+  //         setCalls(callsData);
+
+  //         console.log(contactsData);
+
+  //         // Calculate stats
+  //         const notCalled = contactsData.filter((c) => !c.called).length;
+  //         const called = contactsData.filter(
+  //           (c) => c.called && !c.error,
+  //         ).length;
+  //         const error = contactsData.filter((c) => c.error).length;
+  //         const interested = contactsData.filter((c) => {
+  //           const callData = c.call_id ? callsData[c.call_id] : null;
+  //           return callData?.analysis?.successEvaluation === "true";
+  //         }).length;
+
+  //         setStats({
+  //           notCalled,
+  //           called,
+  //           error,
+  //           interested,
+  //           answered,
+  //           notAnswered,
+  //           totalTalkMinutes: Math.round(totalDuration / 60),
+  //         });
+  //       } else {
+  //         const notCalled = contactsData.filter((c) => !c.called).length;
+  //         const error = contactsData.filter((c) => c.error).length;
+  //         setStats({
+  //           notCalled,
+  //           called: 0,
+  //           error,
+  //           interested: 0,
+  //           answered: 0,
+  //           notAnswered: 0,
+  //           totalTalkMinutes: 0,
+  //         });
+  //       }
+
+  //       setContacts(contactsData);
+  //     } catch (error) {
+  //       console.error("Error fetching campaign data:", error);
+  //     } finally {
+  //       setLoading(false);
+  //     }
+  //   }
+
+  //   fetchCampaignData();
+  // }, [id]);
 
   useEffect(() => {
     async function fetchCampaignData() {
@@ -102,45 +266,47 @@ function CampaignDetailPage() {
           ...doc.data(),
         })) as Contact[];
 
-        console.log("Contacts data:", contactsData);
-
-        // Fetch call data for contacts with call_id
+        // Extract call IDs for contacts with call_id
         const callIds = contactsData
           .filter((contact) => contact.call_id)
           .map((contact) => contact.call_id as string);
 
+        const callsData: { [key: string]: CallData } = {};
+        let totalDuration = 0;
+        let answered = 0;
+        let notAnswered = 0;
+
         if (callIds.length > 0) {
-          const callsData: { [key: string]: CallData } = {};
-          let totalDuration = 0;
-          let answered = 0;
-          let notAnswered = 0;
+          // Parallel fetching for Firestore and API data
+          const callPromises = callIds.map(async (callId) => {
+            try {
+              // Fetch call data from Firestore
+              const callDoc = await getDoc(doc(db, "calls", callId));
+              if (callDoc.exists()) {
+                const callData = callDoc.data() as CallData;
 
-          for (const callId of callIds) {
-            const callDoc = await getDoc(doc(db, "calls", callId));
-            if (callDoc.exists()) {
-              const callData = callDoc.data() as CallData;
-              const appointmentDoc = await getDoc(
-                doc(db, "appointments", callId),
-              );
-              if (appointmentDoc.exists()) {
-                const appointmentData = appointmentDoc.data();
-                callData.appointment = {
-                  date: appointmentData.date,
-                  time: appointmentData.time,
-                };
-              }
-              callsData[callId] = callData;
-              totalDuration += callData.durationSeconds || 0;
+                // Fetch appointment data (if available)
+                const appointmentDoc = await getDoc(
+                  doc(db, "appointments", callId),
+                );
+                if (appointmentDoc.exists()) {
+                  const appointmentData = appointmentDoc.data();
+                  callData.appointment = {
+                    date: appointmentData.date,
+                    time: appointmentData.time,
+                  };
+                }
 
-              // Count answered vs not answered calls
-              if (callData.endedReason === "customer-did-not-answer") {
-                notAnswered++;
+                // Update stats
+                callsData[callId] = callData;
+                totalDuration += callData.durationSeconds || 0;
+                if (callData.endedReason === "customer-did-not-answer") {
+                  notAnswered++;
+                } else {
+                  answered++;
+                }
               } else {
-                answered++;
-              }
-            } else {
-              try {
-                // Make API call to VAPI
+                // If not in Firestore, fetch from VAPI
                 const response = await fetch(
                   `https://api.vapi.ai/call/${callId}`,
                   {
@@ -154,12 +320,10 @@ function CampaignDetailPage() {
                 if (response.ok) {
                   const callData = await response.json();
 
-                  // If call has ended, store it in Firestore
+                  // Save ended calls to Firestore
                   if (callData.status === "ended") {
                     await setDoc(doc(db, "calls", callId), callData);
                     callsData[callId] = callData;
-
-                    // Update counters
                     totalDuration += callData.durationSeconds || 0;
                     if (callData.endedReason === "customer-did-not-answer") {
                       notAnswered++;
@@ -167,27 +331,20 @@ function CampaignDetailPage() {
                       answered++;
                     }
                   } else {
-                    // If call hasn't ended, count as not answered
                     notAnswered++;
                   }
                 } else {
-                  // If API call fails, count as not answered
                   notAnswered++;
                 }
-              } catch (error) {
-                console.error(
-                  `Error fetching call data from VAPI for ${callId}:`,
-                  error,
-                );
-                // If there's an error, count as not answered
-                notAnswered++;
               }
+            } catch (error) {
+              console.error(`Error fetching call data for ${callId}:`, error);
+              notAnswered++;
             }
-          }
+          });
 
-          setCalls(callsData);
-
-          console.log(contactsData);
+          // Wait for all call fetches to complete
+          await Promise.all(callPromises);
 
           // Calculate stats
           const notCalled = contactsData.filter((c) => !c.called).length;
@@ -210,8 +367,10 @@ function CampaignDetailPage() {
             totalTalkMinutes: Math.round(totalDuration / 60),
           });
         } else {
+          // No call IDs to process
           const notCalled = contactsData.filter((c) => !c.called).length;
           const error = contactsData.filter((c) => c.error).length;
+
           setStats({
             notCalled,
             called: 0,
@@ -224,13 +383,13 @@ function CampaignDetailPage() {
         }
 
         setContacts(contactsData);
+        setCalls(callsData);
       } catch (error) {
         console.error("Error fetching campaign data:", error);
       } finally {
         setLoading(false);
       }
     }
-
     fetchCampaignData();
   }, [id]);
 
@@ -265,28 +424,64 @@ function CampaignDetailPage() {
       return false;
     });
 
-    const csvContent = [
-      [
-        "Name",
-        "Phone Number",
-        "Project Name",
-        "Unit Number",
-        "Status",
-        "Error",
-      ],
-      ...filteredContacts.map((contact) => [
-        contact.name || "",
-        contact.phone_number,
-        contact.project_name || "",
-        contact.unit_number || "",
-        status,
-        contact.error || "",
-      ]),
-    ]
-      .map((row) => row.join(","))
+    let csvContent;
+    if (status === "interested") {
+      csvContent = [
+        [
+          "Name",
+          "Phone Number",
+          "Project Name",
+          "Unit Number",
+          "Rent/Sale Intent",
+          "Appointment Date",
+          "Appointment Time",
+          "Transcript",
+          "Recording URL",
+        ],
+        ...filteredContacts.map((contact) => {
+          const callData = contact.call_id ? calls[contact.call_id] : null;
+          const appointmentData = callData?.appointment || {};
+          return [
+            contact.name || "",
+            contact.phone_number,
+            contact.project_name || "",
+            contact.unit_number || "",
+            callData?.analysis?.structuredData?.["post-call-intent-analysis"] ||
+              "N/A",
+            appointmentData.date || "N/A",
+            appointmentData.time || "N/A",
+            callData?.transcript || "N/A",
+            callData?.recordingUrl || "N/A",
+          ];
+        }),
+      ];
+    } else {
+      // Default CSV format for other statuses
+      csvContent = [
+        [
+          "Name",
+          "Phone Number",
+          "Project Name",
+          "Unit Number",
+          "Status",
+          "Error",
+        ],
+        ...filteredContacts.map((contact) => [
+          contact.name || "",
+          contact.phone_number,
+          contact.project_name || "",
+          contact.unit_number || "",
+          status,
+          contact.error || "",
+        ]),
+      ];
+    }
+
+    const csvString = csvContent
+      .map((row) => row.map((cell) => `"${cell}"`).join(","))
       .join("\n");
 
-    const blob = new Blob([csvContent], { type: "text/csv" });
+    const blob = new Blob([csvString], { type: "text/csv" });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -709,35 +904,11 @@ function CampaignDetailPage() {
                       {callData?.messages && callData.messages.length > 0 ? (
                         <div className="relative">
                           <button
-                            onClick={() =>
-                              setExpandedTranscript(
-                                expandedTranscript === contact.id
-                                  ? null
-                                  : contact.id,
-                              )
-                            }
+                            onClick={() => openTranscript(callData.transcript)}
                             className="text-indigo-600 hover:text-indigo-900"
                           >
                             View
                           </button>
-                          {expandedTranscript === contact.id && (
-                            <div className="absolute z-10 mt-2 w-96 bg-white border border-gray-200 rounded-lg shadow-lg p-4">
-                              <div className="flex justify-between items-center mb-2">
-                                <h4 className="text-sm font-medium">
-                                  Call Transcript
-                                </h4>
-                                <button
-                                  onClick={() => setExpandedTranscript(null)}
-                                  className="text-gray-400 hover:text-gray-500"
-                                >
-                                  <XCircle className="h-4 w-4" />
-                                </button>
-                              </div>
-                              <pre className="text-xs whitespace-pre-wrap max-h-60 overflow-y-auto">
-                                {callData.transcript}
-                              </pre>
-                            </div>
-                          )}
                         </div>
                       ) : (
                         "-"
@@ -750,6 +921,11 @@ function CampaignDetailPage() {
           </table>
         </div>
       </div>
+      <TranscriptDialog
+        isOpen={isDialogOpen}
+        onClose={() => setIsDialogOpen(false)}
+        transcript={selectedTranscript}
+      />
     </div>
   );
 }

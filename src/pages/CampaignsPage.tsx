@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+
 import { parse } from "papaparse";
 import { Plus, Building2, X, Download, Upload, Loader2 } from "lucide-react";
 import { db } from "../lib/firebase";
@@ -573,6 +574,7 @@ function NewCampaignForm({ onClose, onSuccess }: NewCampaignFormProps) {
           </div>
         </form>
       </div>
+      
     </div>
   );
 }

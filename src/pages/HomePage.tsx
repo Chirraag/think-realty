@@ -1,3 +1,4 @@
+import TranscriptDialog from "../components/TranscriptDialog";
 import React, { useEffect, useState } from "react";
 import { BarChart, Phone, Clock, CheckCircle, XCircle } from "lucide-react";
 import { db } from "../lib/firebase";
@@ -62,6 +63,16 @@ function HomePage() {
   const [expandedTranscript, setExpandedTranscript] = useState<string | null>(
     null,
   );
+
+  const [selectedTranscript, setSelectedTranscript] = useState<string | null>(
+    null,
+  );
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+
+  function openTranscript(transcript: string) {
+    setSelectedTranscript(transcript);
+    setIsDialogOpen(true);
+  }
 
   useEffect(() => {
     async function fetchData() {
@@ -333,33 +344,11 @@ function HomePage() {
                       {call.messages && (
                         <div className="relative">
                           <button
-                            onClick={() =>
-                              setExpandedTranscript(
-                                expandedTranscript === call.id ? null : call.id,
-                              )
-                            }
+                            onClick={() => openTranscript(call.transcript)}
                             className="text-indigo-600 hover:text-indigo-900"
                           >
                             View Transcript
                           </button>
-                          {expandedTranscript === call.id && (
-                            <div className="absolute z-10 mt-2 w-96 bg-white border border-gray-200 rounded-lg shadow-lg p-4">
-                              <div className="flex justify-between items-center mb-2">
-                                <h4 className="text-sm font-medium">
-                                  Call Transcript
-                                </h4>
-                                <button
-                                  onClick={() => setExpandedTranscript(null)}
-                                  className="text-gray-400 hover:text-gray-500"
-                                >
-                                  <XCircle className="h-4 w-4" />
-                                </button>
-                              </div>
-                              <pre className="text-xs whitespace-pre-wrap max-h-60 overflow-y-auto">
-                                {call.transcript}
-                              </pre>
-                            </div>
-                          )}
                         </div>
                       )}
                     </td>
@@ -382,6 +371,11 @@ function HomePage() {
           </table>
         </div>
       </div>
+      <TranscriptDialog
+        isOpen={isDialogOpen}
+        onClose={() => setIsDialogOpen(false)}
+        transcript={selectedTranscript}
+      />
     </div>
   );
 }
