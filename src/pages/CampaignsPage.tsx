@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from "react";
-
 import { parse } from "papaparse";
 import { Plus, Building2, X, Download, Upload, Loader2 } from "lucide-react";
 import { db } from "../lib/firebase";
@@ -14,7 +13,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
-import type { Campaign } from "../types";
+import type { Campaign, PhoneNumber } from "../types";
 
 interface Contact {
   name: string;
@@ -204,7 +203,6 @@ function NewCampaignForm({ onClose, onSuccess }: NewCampaignFormProps) {
   const [timezone, setTimezone] = useState("Asia/Dubai");
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("18:00");
-  const [campaignDate, setCampaignDate] = useState("");
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
@@ -215,35 +213,57 @@ function NewCampaignForm({ onClose, onSuccess }: NewCampaignFormProps) {
   const [selectedAssistantId, setSelectedAssistantId] = useState("");
   const [loadingAssistants, setLoadingAssistants] = useState(true);
 
-  useEffect(() => {
-    async function fetchAssistants() {
-      try {
-        const response = await fetch("https://api.vapi.ai/assistant", {
-          headers: {
-            Authorization: "Bearer a74661c9-f98f-4af0-afa4-00a0e80ce133",
-          },
-        });
+  const [phoneNumbers, setPhoneNumbers] = useState<PhoneNumber[]>([]);
+  const [selectedPhoneNumberId, setSelectedPhoneNumberId] = useState("");
+  const [loadingPhoneNumbers, setLoadingPhoneNumbers] = useState(true);
 
-        if (response.ok) {
-          const data = await response.json();
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        // Fetch assistants
+        const assistantsResponse = await fetch(
+          "https://api.vapi.ai/assistant",
+          {
+            headers: {
+              Authorization: "Bearer a74661c9-f98f-4af0-afa4-00a0e80ce133",
+            },
+          },
+        );
+
+        if (assistantsResponse.ok) {
+          const assistantsData = await assistantsResponse.json();
           setAssistants(
-            data.map((assistant: any) => ({
+            assistantsData.map((assistant: any) => ({
               id: assistant.id,
               name: assistant.name,
             })),
           );
-        } else {
-          setError("Failed to load assistants");
+        }
+
+        // Fetch phone numbers
+        const phoneNumbersResponse = await fetch(
+          "https://api.vapi.ai/phone-number",
+          {
+            headers: {
+              Authorization: "Bearer a74661c9-f98f-4af0-afa4-00a0e80ce133",
+            },
+          },
+        );
+
+        if (phoneNumbersResponse.ok) {
+          const phoneNumbersData = await phoneNumbersResponse.json();
+          setPhoneNumbers(phoneNumbersData);
         }
       } catch (error) {
-        console.error("Error fetching assistants:", error);
-        setError("Failed to load assistants");
+        console.error("Error fetching data:", error);
+        setError("Failed to load data");
       } finally {
         setLoadingAssistants(false);
+        setLoadingPhoneNumbers(false);
       }
     }
 
-    fetchAssistants();
+    fetchData();
   }, []);
 
   // Get tomorrow's date as the minimum allowed date
@@ -261,6 +281,7 @@ function NewCampaignForm({ onClose, onSuccess }: NewCampaignFormProps) {
       !campaignStartDate ||
       !campaignEndDate ||
       !selectedAssistantId ||
+      !selectedPhoneNumberId ||
       contacts.length === 0
     ) {
       setError("Please fill in all fields and upload contacts");
@@ -283,6 +304,7 @@ function NewCampaignForm({ onClose, onSuccess }: NewCampaignFormProps) {
         status: "active",
         created_at: new Date().toISOString(),
         assistantId: selectedAssistantId,
+        phoneNumberId: selectedPhoneNumberId,
       });
 
       // Add contacts in batches
@@ -301,7 +323,7 @@ function NewCampaignForm({ onClose, onSuccess }: NewCampaignFormProps) {
 
       // Schedule campaign with the API
       const scheduleResponse = await fetch(
-        "https://bulk-back-vapi-chiragguptaatwo.replit.app/campaign/schedule",
+        "https://api.thinkrealty.ae/campaign/schedule",
         {
           method: "POST",
           headers: {
@@ -314,6 +336,7 @@ function NewCampaignForm({ onClose, onSuccess }: NewCampaignFormProps) {
             start_time: startTime,
             end_time: endTime,
             timezone: timezone,
+            phone_number_id: selectedPhoneNumberId,
           }),
         },
       );
@@ -485,6 +508,7 @@ function NewCampaignForm({ onClose, onSuccess }: NewCampaignFormProps) {
               />
             </div>
           </div>
+
           <div>
             <label
               htmlFor="assistant"
@@ -509,6 +533,34 @@ function NewCampaignForm({ onClose, onSuccess }: NewCampaignFormProps) {
             {loadingAssistants && (
               <p className="mt-1 text-sm text-gray-500">
                 Loading assistants...
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label
+              htmlFor="phoneNumber"
+              className="block text-sm font-medium text-gray-700"
+            >
+              Phone Number
+            </label>
+            <select
+              id="phoneNumber"
+              value={selectedPhoneNumberId}
+              onChange={(e) => setSelectedPhoneNumberId(e.target.value)}
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+              disabled={loadingPhoneNumbers}
+            >
+              <option value="">Select a phone number</option>
+              {phoneNumbers.map((phone) => (
+                <option key={phone.id} value={phone.id}>
+                  {phone.name} ({phone.number})
+                </option>
+              ))}
+            </select>
+            {loadingPhoneNumbers && (
+              <p className="mt-1 text-sm text-gray-500">
+                Loading phone numbers...
               </p>
             )}
           </div>
@@ -574,7 +626,6 @@ function NewCampaignForm({ onClose, onSuccess }: NewCampaignFormProps) {
           </div>
         </form>
       </div>
-      
     </div>
   );
 }
