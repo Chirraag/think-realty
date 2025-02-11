@@ -21,8 +21,12 @@ import {
   getDocs,
   updateDoc,
   setDoc,
+  query,
+  limit,
+  startAfter,
 } from "firebase/firestore";
 import type { Campaign } from "../types";
+import Pagination from "../components/Pagination";
 
 interface Contact {
   id: string;
@@ -76,11 +80,11 @@ function CampaignDetailPage() {
     null,
   );
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-
-  function openTranscript(transcript: string) {
-    setSelectedTranscript(transcript);
-    setIsDialogOpen(true);
-  }
+  const [currentPage, setCurrentPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(50);
+  const [totalContacts, setTotalContacts] = useState(0);
+  const [lastDoc, setLastDoc] = useState<any>(null);
+  const [firstLoad, setFirstLoad] = useState(true);
 
   const [stats, setStats] = useState({
     notCalled: 0,
@@ -92,295 +96,135 @@ function CampaignDetailPage() {
     totalTalkMinutes: 0,
   });
 
-  // useEffect(() => {
-  //   async function fetchCampaignData() {
-  //     if (!id) return;
-
-  //     try {
-  //       // Fetch campaign details
-  //       const campaignDoc = await getDoc(doc(db, "campaigns", id));
-  //       if (!campaignDoc.exists()) {
-  //         throw new Error("Campaign not found");
-  //       }
-  //       setCampaign({ id: campaignDoc.id, ...campaignDoc.data() } as Campaign);
-
-  //       // Fetch contacts
-  //       const contactsSnapshot = await getDocs(
-  //         collection(db, `campaigns/${id}/contacts`),
-  //       );
-  //       const contactsData = contactsSnapshot.docs.map((doc) => ({
-  //         id: doc.id,
-  //         ...doc.data(),
-  //       })) as Contact[];
-
-  //       console.log("Contacts data:", contactsData);
-
-  //       // Fetch call data for contacts with call_id
-  //       const callIds = contactsData
-  //         .filter((contact) => contact.call_id)
-  //         .map((contact) => contact.call_id as string);
-
-  //       if (callIds.length > 0) {
-  //         const callsData: { [key: string]: CallData } = {};
-  //         let totalDuration = 0;
-  //         let answered = 0;
-  //         let notAnswered = 0;
-
-  //         for (const callId of callIds) {
-  //           const callDoc = await getDoc(doc(db, "calls", callId));
-  //           if (callDoc.exists()) {
-  //             const callData = callDoc.data() as CallData;
-  //             const appointmentDoc = await getDoc(
-  //               doc(db, "appointments", callId),
-  //             );
-  //             if (appointmentDoc.exists()) {
-  //               const appointmentData = appointmentDoc.data();
-  //               callData.appointment = {
-  //                 date: appointmentData.date,
-  //                 time: appointmentData.time,
-  //               };
-  //             }
-  //             callsData[callId] = callData;
-  //             totalDuration += callData.durationSeconds || 0;
-
-  //             // Count answered vs not answered calls
-  //             if (callData.endedReason === "customer-did-not-answer") {
-  //               notAnswered++;
-  //             } else {
-  //               answered++;
-  //             }
-  //           } else {
-  //             try {
-  //               // Make API call to VAPI
-  //               const response = await fetch(
-  //                 `https://api.vapi.ai/call/${callId}`,
-  //                 {
-  //                   headers: {
-  //                     Authorization:
-  //                       "Bearer a74661c9-f98f-4af0-afa4-00a0e80ce133",
-  //                   },
-  //                 },
-  //               );
-
-  //               if (response.ok) {
-  //                 const callData = await response.json();
-
-  //                 // If call has ended, store it in Firestore
-  //                 if (callData.status === "ended") {
-  //                   await setDoc(doc(db, "calls", callId), callData);
-  //                   callsData[callId] = callData;
-
-  //                   // Update counters
-  //                   totalDuration += callData.durationSeconds || 0;
-  //                   if (callData.endedReason === "customer-did-not-answer") {
-  //                     notAnswered++;
-  //                   } else {
-  //                     answered++;
-  //                   }
-  //                 } else {
-  //                   // If call hasn't ended, count as not answered
-  //                   notAnswered++;
-  //                 }
-  //               } else {
-  //                 // If API call fails, count as not answered
-  //                 notAnswered++;
-  //               }
-  //             } catch (error) {
-  //               console.error(
-  //                 `Error fetching call data from VAPI for ${callId}:`,
-  //                 error,
-  //               );
-  //               // If there's an error, count as not answered
-  //               notAnswered++;
-  //             }
-  //           }
-  //         }
-
-  //         setCalls(callsData);
-
-  //         console.log(contactsData);
-
-  //         // Calculate stats
-  //         const notCalled = contactsData.filter((c) => !c.called).length;
-  //         const called = contactsData.filter(
-  //           (c) => c.called && !c.error,
-  //         ).length;
-  //         const error = contactsData.filter((c) => c.error).length;
-  //         const interested = contactsData.filter((c) => {
-  //           const callData = c.call_id ? callsData[c.call_id] : null;
-  //           return callData?.analysis?.successEvaluation === "true";
-  //         }).length;
-
-  //         setStats({
-  //           notCalled,
-  //           called,
-  //           error,
-  //           interested,
-  //           answered,
-  //           notAnswered,
-  //           totalTalkMinutes: Math.round(totalDuration / 60),
-  //         });
-  //       } else {
-  //         const notCalled = contactsData.filter((c) => !c.called).length;
-  //         const error = contactsData.filter((c) => c.error).length;
-  //         setStats({
-  //           notCalled,
-  //           called: 0,
-  //           error,
-  //           interested: 0,
-  //           answered: 0,
-  //           notAnswered: 0,
-  //           totalTalkMinutes: 0,
-  //         });
-  //       }
-
-  //       setContacts(contactsData);
-  //     } catch (error) {
-  //       console.error("Error fetching campaign data:", error);
-  //     } finally {
-  //       setLoading(false);
-  //     }
-  //   }
-
-  //   fetchCampaignData();
-  // }, [id]);
+  function openTranscript(transcript: string) {
+    setSelectedTranscript(transcript);
+    setIsDialogOpen(true);
+  }
 
   useEffect(() => {
     async function fetchCampaignData() {
       if (!id) return;
 
       try {
-        // Fetch campaign details
-        const campaignDoc = await getDoc(doc(db, "campaigns", id));
+        setLoading(true);
+
+        // Parallel fetch for campaign details and all contacts
+        const [campaignDoc, allContactsSnapshot] = await Promise.all([
+          getDoc(doc(db, "campaigns", id)),
+          getDocs(collection(db, `campaigns/${id}/contacts`)),
+        ]);
+
         if (!campaignDoc.exists()) {
           throw new Error("Campaign not found");
         }
+
         setCampaign({ id: campaignDoc.id, ...campaignDoc.data() } as Campaign);
 
-        // Fetch contacts
-        const contactsSnapshot = await getDocs(
-          collection(db, `campaigns/${id}/contacts`),
-        );
-        const contactsData = contactsSnapshot.docs.map((doc) => ({
+        const totalContactsCount = allContactsSnapshot.size;
+        setTotalContacts(totalContactsCount);
+
+        // Process all contacts for stats
+        const allContacts = allContactsSnapshot.docs.map((doc) => ({
           id: doc.id,
           ...doc.data(),
         })) as Contact[];
 
-        // Extract call IDs for contacts with call_id
-        const callIds = contactsData
+        // Calculate basic stats
+        const notCalled = allContacts.filter((c) => !c.called).length;
+        const called = allContacts.filter((c) => c.called && !c.error).length;
+        const error = allContacts.filter((c) => c.error).length;
+
+        // Get all call IDs
+        const callIds = allContacts
           .filter((contact) => contact.call_id)
           .map((contact) => contact.call_id as string);
 
-        const callsData: { [key: string]: CallData } = {};
+        // Parallel fetch for all calls and their appointments
+        const callPromises = callIds.map(async (callId) => {
+          const [callDoc, appointmentDoc] = await Promise.all([
+            getDoc(doc(db, "calls", callId)),
+            getDoc(doc(db, "appointments", callId)),
+          ]);
+
+          if (callDoc.exists()) {
+            const callData = callDoc.data() as CallData;
+            if (appointmentDoc.exists()) {
+              callData.appointment = appointmentDoc.data() as {
+                date: string;
+                time: string;
+              };
+            }
+            return { id: callId, data: callData };
+          }
+          return null;
+        });
+
+        // Process all calls in parallel
+        const callResults = await Promise.all(callPromises);
+
+        // Process call stats
         let totalDuration = 0;
         let answered = 0;
         let notAnswered = 0;
+        let interested = 0;
+        const callsData: { [key: string]: CallData } = {};
 
-        if (callIds.length > 0) {
-          // Parallel fetching for Firestore and API data
-          const callPromises = callIds.map(async (callId) => {
-            try {
-              // Fetch call data from Firestore
-              const callDoc = await getDoc(doc(db, "calls", callId));
-              if (callDoc.exists()) {
-                const callData = callDoc.data() as CallData;
+        callResults.forEach((result) => {
+          if (result) {
+            const { id, data } = result;
+            callsData[id] = data;
+            totalDuration += data.durationSeconds || 0;
 
-                // Fetch appointment data (if available)
-                const appointmentDoc = await getDoc(
-                  doc(db, "appointments", callId),
-                );
-                if (appointmentDoc.exists()) {
-                  const appointmentData = appointmentDoc.data();
-                  callData.appointment = {
-                    date: appointmentData.date,
-                    time: appointmentData.time,
-                  };
-                }
-
-                // Update stats
-                callsData[callId] = callData;
-                totalDuration += callData.durationSeconds || 0;
-                if (callData.endedReason === "customer-did-not-answer") {
-                  notAnswered++;
-                } else {
-                  answered++;
-                }
-              } else {
-                // If not in Firestore, fetch from VAPI
-                const response = await fetch(
-                  `https://api.vapi.ai/call/${callId}`,
-                  {
-                    headers: {
-                      Authorization:
-                        "Bearer a74661c9-f98f-4af0-afa4-00a0e80ce133",
-                    },
-                  },
-                );
-
-                if (response.ok) {
-                  const callData = await response.json();
-
-                  // Save ended calls to Firestore
-                  if (callData.status === "ended") {
-                    await setDoc(doc(db, "calls", callId), callData);
-                    callsData[callId] = callData;
-                    totalDuration += callData.durationSeconds || 0;
-                    if (callData.endedReason === "customer-did-not-answer") {
-                      notAnswered++;
-                    } else {
-                      answered++;
-                    }
-                  } else {
-                    notAnswered++;
-                  }
-                } else {
-                  notAnswered++;
-                }
-              }
-            } catch (error) {
-              console.error(`Error fetching call data for ${callId}:`, error);
+            if (data.endedReason === "customer-did-not-answer") {
               notAnswered++;
+            } else {
+              answered++;
             }
-          });
 
-          // Wait for all call fetches to complete
-          await Promise.all(callPromises);
+            if (data.analysis?.successEvaluation === "true") {
+              interested++;
+            }
+          }
+        });
 
-          // Calculate stats
-          const notCalled = contactsData.filter((c) => !c.called).length;
-          const called = contactsData.filter(
-            (c) => c.called && !c.error,
-          ).length;
-          const error = contactsData.filter((c) => c.error).length;
-          const interested = contactsData.filter((c) => {
-            const callData = c.call_id ? callsData[c.call_id] : null;
-            return callData?.analysis?.successEvaluation === "true";
-          }).length;
+        // Set overall stats
+        setStats({
+          notCalled,
+          called,
+          error,
+          interested,
+          answered,
+          notAnswered,
+          totalTalkMinutes: Math.round(totalDuration / 60),
+        });
 
-          setStats({
-            notCalled,
-            called,
-            error,
-            interested,
-            answered,
-            notAnswered,
-            totalTalkMinutes: Math.round(totalDuration / 60),
-          });
+        // Fetch paginated contacts
+        let contactsQuery;
+        if (currentPage === 1 || firstLoad) {
+          contactsQuery = query(
+            collection(db, `campaigns/${id}/contacts`),
+            limit(rowsPerPage),
+          );
+          setFirstLoad(false);
         } else {
-          // No call IDs to process
-          const notCalled = contactsData.filter((c) => !c.called).length;
-          const error = contactsData.filter((c) => c.error).length;
-
-          setStats({
-            notCalled,
-            called: 0,
-            error,
-            interested: 0,
-            answered: 0,
-            notAnswered: 0,
-            totalTalkMinutes: 0,
-          });
+          contactsQuery = query(
+            collection(db, `campaigns/${id}/contacts`),
+            startAfter(lastDoc),
+            limit(rowsPerPage),
+          );
         }
+
+        const paginatedContactsSnapshot = await getDocs(contactsQuery);
+        setLastDoc(
+          paginatedContactsSnapshot.docs[
+            paginatedContactsSnapshot.docs.length - 1
+          ],
+        );
+
+        const contactsData = paginatedContactsSnapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        })) as Contact[];
 
         setContacts(contactsData);
         setCalls(callsData);
@@ -390,8 +234,9 @@ function CampaignDetailPage() {
         setLoading(false);
       }
     }
+
     fetchCampaignData();
-  }, [id]);
+  }, [id, currentPage, rowsPerPage]);
 
   async function handleEndCampaign() {
     if (!campaign?.id) return;
@@ -533,6 +378,8 @@ function CampaignDetailPage() {
       </div>
     );
   }
+
+  const totalPages = Math.ceil(totalContacts / rowsPerPage);
 
   return (
     <div className="space-y-6">
@@ -920,6 +767,16 @@ function CampaignDetailPage() {
             </tbody>
           </table>
         </div>
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          rowsPerPage={rowsPerPage}
+          onPageChange={setCurrentPage}
+          onRowsPerPageChange={(rows) => {
+            setRowsPerPage(rows);
+            setCurrentPage(1);
+          }}
+        />
       </div>
       <TranscriptDialog
         isOpen={isDialogOpen}

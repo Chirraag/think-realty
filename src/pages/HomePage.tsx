@@ -10,9 +10,11 @@ import {
   orderBy,
   doc,
   limit,
+  startAfter,
   where,
 } from "firebase/firestore";
 import type { Campaign } from "../types";
+import Pagination from "../components/Pagination";
 
 interface CallData {
   id: string;
@@ -60,14 +62,17 @@ function HomePage() {
   );
   const [calls, setCalls] = useState<CallData[]>([]);
   const [loading, setLoading] = useState(true);
-  const [expandedTranscript, setExpandedTranscript] = useState<string | null>(
-    null,
-  );
-
   const [selectedTranscript, setSelectedTranscript] = useState<string | null>(
     null,
   );
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(50);
+  const [totalCalls, setTotalCalls] = useState(0);
+  const [lastDoc, setLastDoc] = useState<any>(null);
+  const [firstLoad, setFirstLoad] = useState(true);
 
   function openTranscript(transcript: string) {
     setSelectedTranscript(transcript);
@@ -77,7 +82,7 @@ function HomePage() {
   useEffect(() => {
     async function fetchData() {
       try {
-        // Fetch campaigns
+        // Fetch campaigns for stats
         const campaignsSnapshot = await getDocs(collection(db, "campaigns"));
         const campaigns = campaignsSnapshot.docs.map((doc) => ({
           id: doc.id,
@@ -91,25 +96,52 @@ function HomePage() {
           (c) => c.status === "ended" || c.status === "completed",
         ).length;
 
-        // Fetch calls
-        const callsQuery = query(
-          collection(db, "calls"),
-          orderBy("timestamp", "desc"),
-        );
+        // Get total count first
+        const totalCallsSnapshot = await getDocs(collection(db, "calls"));
+        const totalCallsCount = totalCallsSnapshot.size;
+        setTotalCalls(totalCallsCount);
+
+        // Calculate total stats from all calls
+        let totalDuration = 0;
+        let reasonStats: EndedReasonStats = {};
+
+        for (const doc of totalCallsSnapshot.docs) {
+          const callData = doc.data() as CallData;
+          totalDuration += callData.durationSeconds || 0;
+          if (callData.endedReason) {
+            reasonStats[callData.endedReason] =
+              (reasonStats[callData.endedReason] || 0) + 1;
+          }
+        }
+
+        // Fetch paginated calls
+        let callsQuery;
+        if (currentPage === 1 || firstLoad) {
+          callsQuery = query(
+            collection(db, "calls"),
+            orderBy("timestamp", "desc"),
+            limit(rowsPerPage),
+          );
+          setFirstLoad(false);
+        } else {
+          callsQuery = query(
+            collection(db, "calls"),
+            orderBy("timestamp", "desc"),
+            startAfter(lastDoc),
+            limit(rowsPerPage),
+          );
+        }
+
         const callsSnapshot = await getDocs(callsQuery);
-        // const callsData = callsSnapshot.docs.map((doc) => ({
-        //   id: doc.id,
-        //   ...doc.data(),
-        // })) as CallData[];
+        setLastDoc(callsSnapshot.docs[callsSnapshot.docs.length - 1]);
 
         const callsData = await Promise.all(
           callsSnapshot.docs.map(async (call) => {
             const callData = call.data() as CallData;
-
-            // Fetch appointment data
             const appointmentDoc = await getDoc(
               doc(db, "appointments", call.id),
             );
+
             if (appointmentDoc.exists()) {
               const appointmentData = appointmentDoc.data();
               callData.appointment = {
@@ -125,31 +157,16 @@ function HomePage() {
           }),
         );
 
-        // Calculate metrics
-        const totalCalls = callsData.length;
-        const totalDuration = callsData.reduce(
-          (acc, call) => acc + (call.durationSeconds || 0),
-          0,
-        );
-        const averageDuration = totalCalls > 0 ? totalDuration / totalCalls : 0;
-        const totalTalkMinutes = Math.round(totalDuration / 60);
-
-        // Calculate ended reason stats
-        const reasonStats: EndedReasonStats = {};
-        callsData.forEach((call) => {
-          if (call.endedReason) {
-            reasonStats[call.endedReason] =
-              (reasonStats[call.endedReason] || 0) + 1;
-          }
-        });
-
+        // Set metrics using total stats
         setMetrics({
-          totalCalls,
+          totalCalls: totalCallsCount,
           activeCampaigns,
           completedCampaigns,
-          averageDuration,
-          totalTalkMinutes,
+          averageDuration:
+            totalCallsCount > 0 ? totalDuration / totalCallsCount : 0,
+          totalTalkMinutes: Math.round(totalDuration / 60),
         });
+
         setEndedReasonStats(reasonStats);
         setCalls(callsData);
       } catch (error) {
@@ -160,7 +177,7 @@ function HomePage() {
     }
 
     fetchData();
-  }, []);
+  }, [currentPage, rowsPerPage]);
 
   function formatDate(timestamp: number) {
     return new Date(timestamp).toLocaleString();
@@ -178,6 +195,8 @@ function HomePage() {
     const remainingMinutes = minutes % 60;
     return `${hours}h ${remainingMinutes}m`;
   }
+
+  const totalPages = Math.ceil(totalCalls / rowsPerPage);
 
   return (
     <div className="space-y-6">
@@ -233,142 +252,154 @@ function HomePage() {
 
       <div className="mt-8">
         <h2 className="text-lg font-medium text-gray-900 mb-4">Recent Calls</h2>
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th
-                  scope="col"
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                >
-                  Date & Time
-                </th>
-                <th
-                  scope="col"
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                >
-                  Agent Number
-                </th>
-                <th
-                  scope="col"
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                >
-                  Customer Number
-                </th>
-                <th
-                  scope="col"
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                >
-                  Duration
-                </th>
-                <th
-                  scope="col"
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                >
-                  End Reason
-                </th>
-                <th
-                  scope="col"
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                >
-                  Rent/Sale Intent
-                </th>
-                <th
-                  scope="col"
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                >
-                  Appointment
-                </th>
-                <th
-                  scope="col"
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                >
-                  Transcript
-                </th>
-                <th
-                  scope="col"
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                >
-                  Recording
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {loading ? (
+        <div className="bg-white shadow-sm rounded-lg">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
                 <tr>
-                  <td
-                    colSpan={7}
-                    className="px-6 py-4 text-center text-sm text-gray-500"
+                  <th
+                    scope="col"
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
                   >
-                    Loading...
-                  </td>
-                </tr>
-              ) : calls.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={7}
-                    className="px-6 py-4 text-center text-sm text-gray-500"
+                    Date & Time
+                  </th>
+                  <th
+                    scope="col"
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
                   >
-                    No calls found
-                  </td>
+                    Agent Number
+                  </th>
+                  <th
+                    scope="col"
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  >
+                    Customer Number
+                  </th>
+                  <th
+                    scope="col"
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  >
+                    Duration
+                  </th>
+                  <th
+                    scope="col"
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  >
+                    End Reason
+                  </th>
+                  <th
+                    scope="col"
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  >
+                    Rent/Sale Intent
+                  </th>
+                  <th
+                    scope="col"
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  >
+                    Appointment
+                  </th>
+                  <th
+                    scope="col"
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  >
+                    Transcript
+                  </th>
+                  <th
+                    scope="col"
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  >
+                    Recording
+                  </th>
                 </tr>
-              ) : (
-                calls.map((call) => (
-                  <tr key={call.id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {formatDate(call.timestamp)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {call.phoneNumber?.number || "N/A"}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {call.customer?.number || "N/A"}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {formatDuration(call.durationSeconds)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {call.endedReason}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {call?.analysis?.structuredData?.[
-                        "post-call-intent-analysis"
-                      ] || "-"}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {call?.appointment
-                        ? `${call.appointment.date} & ${call.appointment.time}`
-                        : "N/A"}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-900">
-                      {call.messages && (
-                        <div className="relative">
-                          <button
-                            onClick={() => openTranscript(call.transcript)}
-                            className="text-indigo-600 hover:text-indigo-900"
-                          >
-                            View Transcript
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {call.recordingUrl && (
-                        <a
-                          href={call.recordingUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-indigo-600 hover:text-indigo-900"
-                        >
-                          Listen
-                        </a>
-                      )}
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {loading ? (
+                  <tr>
+                    <td
+                      colSpan={7}
+                      className="px-6 py-4 text-center text-sm text-gray-500"
+                    >
+                      Loading...
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ) : calls.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={7}
+                      className="px-6 py-4 text-center text-sm text-gray-500"
+                    >
+                      No calls found
+                    </td>
+                  </tr>
+                ) : (
+                  calls.map((call) => (
+                    <tr key={call.id}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {formatDate(call.timestamp)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {call.phoneNumber?.number || "N/A"}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {call.customer?.number || "N/A"}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {formatDuration(call.durationSeconds)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {call.endedReason}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {call?.analysis?.structuredData?.[
+                          "post-call-intent-analysis"
+                        ] || "-"}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {call?.appointment
+                          ? `${call.appointment.date} & ${call.appointment.time}`
+                          : "N/A"}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-900">
+                        {call.messages && (
+                          <div className="relative">
+                            <button
+                              onClick={() => openTranscript(call.transcript)}
+                              className="text-indigo-600 hover:text-indigo-900"
+                            >
+                              View Transcript
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {call.recordingUrl && (
+                          <a
+                            href={call.recordingUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-indigo-600 hover:text-indigo-900"
+                          >
+                            Listen
+                          </a>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            rowsPerPage={rowsPerPage}
+            onPageChange={setCurrentPage}
+            onRowsPerPageChange={(rows) => {
+              setRowsPerPage(rows);
+              setCurrentPage(1);
+            }}
+          />
         </div>
       </div>
       <TranscriptDialog
