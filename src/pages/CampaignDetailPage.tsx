@@ -20,7 +20,6 @@ import {
   getDoc,
   getDocs,
   updateDoc,
-  setDoc,
   query,
   limit,
   startAfter,
@@ -35,6 +34,8 @@ interface Contact {
   called: boolean;
   call_id?: string;
   error?: string;
+  project_name?: string;
+  unit_number?: string;
 }
 
 interface CallData {
@@ -56,7 +57,7 @@ interface CallData {
   analysis?: {
     successEvaluation: string;
     structuredData?: {
-      "post-call-intent-analysis": string; // 'SALE' | 'RENT' | null
+      "post-call-intent-analysis": string;
     };
   };
   transcript: string;
@@ -71,6 +72,7 @@ function CampaignDetailPage() {
   const navigate = useNavigate();
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [allContacts, setAllContacts] = useState<Contact[]>([]);
   const [calls, setCalls] = useState<{ [key: string]: CallData }>({});
   const [loading, setLoading] = useState(true);
   const [expandedTranscript, setExpandedTranscript] = useState<string | null>(
@@ -120,27 +122,32 @@ function CampaignDetailPage() {
 
         setCampaign({ id: campaignDoc.id, ...campaignDoc.data() } as Campaign);
 
-        const totalContactsCount = allContactsSnapshot.size;
-        setTotalContacts(totalContactsCount);
-
-        // Process all contacts for stats
-        const allContacts = allContactsSnapshot.docs.map((doc) => ({
+        // Store all contacts for metrics and CSV
+        const allContactsData = allContactsSnapshot.docs.map((doc) => ({
           id: doc.id,
           ...doc.data(),
         })) as Contact[];
+        setAllContacts(allContactsData);
+        setTotalContacts(allContactsData.length);
 
-        // Calculate basic stats
-        const notCalled = allContacts.filter((c) => !c.called).length;
-        const called = allContacts.filter((c) => c.called && !c.error).length;
-        const error = allContacts.filter((c) => c.error).length;
+        // Calculate basic stats from all contacts
+        const notCalled = allContactsData.filter((c) => !c.called).length;
+        const called = allContactsData.filter(
+          (c) => c.called && !c.error,
+        ).length;
+        const error = allContactsData.filter((c) => c.error).length;
 
-        // Get all call IDs
-        const callIds = allContacts
+        // Get all call IDs from all contacts
+        const callIds = allContactsData
           .filter((contact) => contact.call_id)
           .map((contact) => contact.call_id as string);
 
         // Parallel fetch for all calls and their appointments
         const callPromises = callIds.map(async (callId) => {
+          if (!callId) {
+            console.log(callId);
+            return null;
+          }
           const [callDoc, appointmentDoc] = await Promise.all([
             getDoc(doc(db, "calls", callId)),
             getDoc(doc(db, "appointments", callId)),
@@ -169,16 +176,23 @@ function CampaignDetailPage() {
         let interested = 0;
         const callsData: { [key: string]: CallData } = {};
 
+        console.log(callResults);
+
         callResults.forEach((result) => {
           if (result) {
             const { id, data } = result;
             callsData[id] = data;
             totalDuration += data.durationSeconds || 0;
 
-            if (data.endedReason === "customer-did-not-answer") {
-              notAnswered++;
-            } else {
+            // Update answer rate calculation based on specific end reasons
+            if (
+              data.endedReason === "customer-ended-call" ||
+              data.endedReason === "assistant-ended-call"
+            ) {
               answered++;
+            } else if (!data.error) {
+              // Count as not answered if there's an end reason that's not error and not customer/assistant ended
+              notAnswered++;
             }
 
             if (data.analysis?.successEvaluation === "true") {
@@ -186,6 +200,8 @@ function CampaignDetailPage() {
             }
           }
         });
+
+        notAnswered = called - answered;
 
         // Set overall stats
         setStats({
@@ -253,7 +269,8 @@ function CampaignDetailPage() {
   function downloadContacts(
     status: "notCalled" | "error" | "interested" | "notAnswered",
   ) {
-    const filteredContacts = contacts.filter((contact) => {
+    // Use allContacts instead of contacts for CSV generation
+    const filteredContacts = allContacts.filter((contact) => {
       if (status === "notCalled") return !contact.called;
       if (status === "error") return !!contact.error;
       if (status === "interested") {
@@ -261,10 +278,14 @@ function CampaignDetailPage() {
         return callData?.analysis?.successEvaluation === "true";
       }
       if (status === "notAnswered") {
-        // Include contacts where call_id exists but no call data found
-        if (contact.call_id && !calls[contact.call_id]) return true;
         const callData = contact.call_id ? calls[contact.call_id] : null;
-        return callData?.endedReason === "customer-did-not-answer";
+        return (
+          (callData?.endedReason !== "customer-ended-call" &&
+            callData?.endedReason !== "assistant-ended-call" &&
+            !contact.error &&
+            contact.call_id) ||
+          (contact.call_id && !calls[contact.call_id])
+        );
       }
       return false;
     });
@@ -301,7 +322,6 @@ function CampaignDetailPage() {
         }),
       ];
     } else {
-      // Default CSV format for other statuses
       csvContent = [
         [
           "Name",
@@ -354,15 +374,6 @@ function CampaignDetailPage() {
     return `${hours}h ${remainingMinutes}m`;
   }
 
-  function formatTranscript(
-    messages: Array<{ message: string; role: string }>,
-  ) {
-    return messages
-      .filter((msg) => msg.role === "bot" || msg.role === "human")
-      .map((msg) => `${msg.role === "bot" ? "AI" : "Customer"}: ${msg.message}`)
-      .join("\n");
-  }
-
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -381,8 +392,17 @@ function CampaignDetailPage() {
 
   const totalPages = Math.ceil(totalContacts / rowsPerPage);
 
+  // Calculate answer rate based on actual called contacts
+  const answerRate =
+    stats.called > 0
+      ? Math.round(
+          (stats.answered / (stats.answered + stats.notAnswered)) * 100,
+        )
+      : 0;
+
   return (
     <div className="space-y-6">
+      {/* Campaign Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
           <button
@@ -407,10 +427,6 @@ function CampaignDetailPage() {
             <p className="text-sm text-gray-500">
               Daily Time: {campaign?.start_time} - {campaign?.end_time}
             </p>
-            <p className="text-sm text-gray-500">
-              {new Date(campaign.created_at).toLocaleDateString()} ·{" "}
-              {campaign.timezone}
-            </p>
           </div>
         </div>
         {(campaign.status === "active" ||
@@ -424,6 +440,7 @@ function CampaignDetailPage() {
         )}
       </div>
 
+      {/* Metrics Grid */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-6">
         <div className="bg-white overflow-hidden shadow-sm rounded-lg border border-gray-100">
           <div className="p-4">
@@ -530,10 +547,7 @@ function CampaignDetailPage() {
               <div>
                 <p className="text-sm font-medium text-gray-500">Answer Rate</p>
                 <p className="text-2xl font-semibold text-gray-900">
-                  {stats.called > 0
-                    ? Math.round((stats.answered / stats.called) * 100)
-                    : 0}
-                  %
+                  {answerRate}%
                 </p>
               </div>
               <div className="flex flex-col items-end">
@@ -560,6 +574,7 @@ function CampaignDetailPage() {
         </div>
       </div>
 
+      {/* Contacts Table */}
       <div className="bg-white shadow-sm rounded-lg border border-gray-100">
         <div className="px-4 py-5 sm:px-6">
           <h2 className="text-lg font-medium text-gray-900">Contact List</h2>
